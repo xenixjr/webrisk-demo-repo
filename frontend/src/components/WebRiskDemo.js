@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Shield, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 
 const STORAGE_KEY = 'webRiskSubmissions';
+const backendBaseUrl = 'YOUR_BACKEND_URL_PREFIX'; // e.g. https://backend-dot-tamw-webrisk-demo.uc.r.appspot.com
 
 const saveSubmissionsToStorage = (submissions) => {
   try {
@@ -114,7 +115,7 @@ const WebRiskDemo = () => {
   const handleScan = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/scan', {
+      const response = await fetch('${backendBaseUrl}/api/scan', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
