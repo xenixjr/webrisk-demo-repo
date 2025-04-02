@@ -1,6 +1,9 @@
-runtime: python39
+runtime: python39 # Or your chosen Python version
 service: backend
 entrypoint: gunicorn -b :$PORT main:app
 
 env_variables:
-  WEBRISK_API_KEY: ${WEBRISK_API_KEY}
+  # IMPORTANT: Replace placeholders below with actual values locally before deploying,
+  # OR configure and use Secret Manager (preferred). Do not commit secrets!
+  WEBRISK_API_KEY: 'YOUR_WEBRISK_API_KEY_PLACEHOLDER'
+  GOOGLE_CLOUD_PROJECT_NUMBER: 'YOUR_PROJECT_NUMBER_PLACEHOLDER'
