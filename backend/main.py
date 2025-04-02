@@ -1,14 +1,17 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
+from urllib.parse import urlencode
 from google.auth.transport.requests import AuthorizedSession
-import google.auth
-import logging
 from datetime import datetime
 from utils import format_url, validate_submission_evidence
+import google.auth
+import logging
 import os  # We need this for environment variables
 import requests  # This is used in the scan_url function
 
-app = Flask(__name__)
 
+app = Flask(__name__)
+CORS(app, origins="YOUR_FRONTEND_URL") # e.g., https://tamw-webrisk-demo.uc.r.appspot.com
 # Configure logging to help us debug issues
 logging.basicConfig(level=logging.DEBUG)
 logger = app.logger
@@ -18,39 +21,78 @@ def scan_url():
     logger.debug("Received scan request")
     data = request.json
     raw_url = data.get('url')
-    formatted_url = format_url(raw_url)
-    
+    if not raw_url:
+        logger.error("No URL provided in request")
+        return jsonify({'error': 'URL is required'}), 400
+
+    formatted_url = format_url(raw_url) # Use your formatting function
+    logger.debug(f"Formatted URL for checking: {formatted_url}")
+
     try:
         api_key = os.getenv('WEBRISK_API_KEY')
-        request_body = {
-            "uri": formatted_url,
-            "resolve_shortlinks": True,
-            "threatTypes": [
-                "SOCIAL_ENGINEERING",
-                "MALWARE",
-                "UNWANTED_SOFTWARE"
-            ]
+        if not api_key:
+            logger.error("Missing WEBRISK_API_KEY environment variable")
+            return jsonify({'error': 'Server configuration error: API key missing'}), 500
+
+        threat_types = ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"]
+
+        # --- Use Web Risk API v1 uris.search ---
+        search_params = {
+            'key': api_key,
+            'uri': formatted_url,
+            'threatTypes': threat_types
         }
-        
-        response = requests.post(
-            f"https://webrisk.googleapis.com/v1eap1:evaluateUri?key={api_key}",
-            json=request_body,
-            headers={"Content-Type": "application/json; charset=utf-8"}
-        )
-        
-        logger.debug(f"API Response Status: {response.status_code}")
-        logger.debug(f"API Response Body: {response.text}")
-        
-        response_data = response.json()
-        if 'resolvedUri' in response_data:
-            logger.info(f"Shortlink resolved: {raw_url} -> {response_data['resolvedUri']}")
-        
-        response.raise_for_status()
-        return jsonify(response_data)
-        
+        query_string = urlencode(search_params, doseq=True) # Encode params for GET request
+        search_url = f"https://webrisk.googleapis.com/v1/uris:search?{query_string}"
+
+        logger.debug(f"Calling Web Risk API v1: GET {search_url}")
+
+        response = requests.get(search_url) # Use GET request
+
+        logger.debug(f"Web Risk API Response Status: {response.status_code}")
+        logger.debug(f"Web Risk API Response Body: {response.text}")
+
+        response.raise_for_status() # Raise exception for 4xx/5xx errors from Google
+
+        # Process the response from uris.search
+        response_data = response.json() if response.text else {} # Handle potentially empty response body if no threat
+
+        # Adapt response for frontend - uris.search returns a 'threat' object if found
+        scores = []
+        found_threat = response_data.get('threat')
+
+        if found_threat:
+            found_threat_types = found_threat.get('threatTypes', [])
+            logger.info(f"Threat found for {formatted_url}: {found_threat_types}")
+            for t_type in threat_types:
+                scores.append({
+                    "threatType": t_type,
+                    # Map found threats to HIGH confidence, others to SAFE
+                    "confidenceLevel": "HIGH" if t_type in found_threat_types else "SAFE"
+                })
+        else:
+            logger.info(f"No threat found for {formatted_url}")
+            # No threat found, all are SAFE
+            for t_type in threat_types:
+                scores.append({
+                    "threatType": t_type,
+                    "confidenceLevel": "SAFE"
+                })
+
+        frontend_response = {"scores": scores}
+        logger.debug(f"Sending response to frontend: {frontend_response}")
+        return jsonify(frontend_response)
+
+    except requests.exceptions.HTTPError as http_err:
+        error_details = response.text # Try to get error details
+        logger.error(f"HTTP error calling Web Risk API: {str(http_err)} - Details: {error_details}")
+        return jsonify({'error': f"Web Risk API request failed: {response.status_code}", 'details': error_details}), 502 # 502 Bad Gateway
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error during API request: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Network error calling Web Risk API: {str(e)}")
+        return jsonify({'error': f"Could not connect to Web Risk API: {str(e)}"}), 504 # 504 Gateway Timeout
+    except Exception as e:
+        logger.error(f"Unexpected error in scan_url: {str(e)}", exc_info=True) # Log full traceback for other errors
+        return jsonify({'error': f"Internal server error"}), 500
 
 @app.route('/api/submit', methods=['POST'])
 def submit_url():
