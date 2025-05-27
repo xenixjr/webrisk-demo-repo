@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Shield, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 
 const STORAGE_KEY = 'webRiskSubmissions';
-const backendBaseUrl = 'YOUR_BACKEND_URL_PREFIX'; // e.g. https://backend-dot-tamw-webrisk-demo.uc.r.appspot.com
+const backendBaseUrl = 'https://backend-dot-tamw-webrisk-demo.uc.r.appspot.com'; // e.g. https://backend-dot-tamw-webrisk-demo.uc.r.appspot.com
 
 const saveSubmissionsToStorage = (submissions) => {
   try {
