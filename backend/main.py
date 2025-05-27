@@ -1,156 +1,166 @@
+import os
+import logging
+from urllib.parse import urlencode, quote_plus
+from datetime import datetime
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from urllib.parse import urlencode, quote_plus
-from google.auth.transport.requests import AuthorizedSession
-from datetime import datetime
-from utils import format_url, validate_submission_evidence
-import google.auth
-import logging
-import os  # We need this for environment variables
-import requests  # This is used in the scan_url function
+import requests
+import google.auth # For the submit_url function if you keep it
+from google.auth.transport.requests import AuthorizedSession # For submit_url
 
-# --- Flask App Setup ---
+# Assuming utils.py with format_url exists in the same directory
+from utils import format_url
+
 app = Flask(__name__)
-# Configure CORS properly - replace with your actual frontend URL
-# Make sure this URL is correct and doesn't have a trailing slash if your origin doesn't
-frontend_origin = os.getenv('FRONTEND_ORIGIN_URL', 'YOUR_FRONTEND_ORIGIN_URL_HERE') # Example: 'https://your-project-id.uc.r.appspot.com'
-CORS(app, origins=frontend_origin) # Simplified global CORS for the allowed origin
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
 logger = app.logger
-logging.basicConfig(level=logging.DEBUG) # Keep debug logging
 
-# --- API Routes ---
-@app.route('/api/scan', methods=['POST']) # Let Flask-CORS handle OPTIONS implicitly
+# Configure CORS: Replace with your actual frontend URL placeholder or direct value.
+# The value from FRONTEND_ORIGIN_URL env var will be used if set.
+# Default to a restrictive placeholder if env var is not set.
+FRONTEND_URL = os.getenv('FRONTEND_ORIGIN_URL', 'https://your-project-id-region-id.r.appspot.com') # Fallback
+CORS(app, origins=FRONTEND_URL)
+
+@app.route('/api/scan', methods=['POST'])
 def scan_url():
-    logger.debug("Received scan request")
+    logger.debug("Received scan request from frontend")
     data = request.json
-    raw_url = data.get('url')
-    if not raw_url:
-        logger.error("No URL provided in request")
-        return jsonify({'error': 'URL is required'}), 400
+    raw_url_from_frontend = data.get('url')
 
-    formatted_url = format_url(raw_url)
-    logger.debug(f"Formatted URL for checking: {formatted_url}")
+    if not raw_url_from_frontend:
+        logger.error("No URL provided in request body")
+        return jsonify({'error': 'URL is required in the request body'}), 400
 
-    # Initialize response variables
-    web_risk_request_url_display = "N/A" # URL sent to Google (without key)
+    formatted_url_for_webrisk = format_url(raw_url_from_frontend)
+    logger.debug(f"Formatted URL for Web Risk check: {formatted_url_for_webrisk}")
+
+    # Initialize response variables for debugging details
+    web_risk_request_url_display = "N/A"
     web_risk_status_code = None
     web_risk_response_body = None
     error_message = None
-    error_details = None
-    http_status_code = 500 # Default to internal error
+    error_details_for_frontend = None # Specific details to show frontend on error
+    http_status_to_return_to_frontend = 500 # Default
 
     try:
         api_key = os.getenv('WEBRISK_API_KEY')
         if not api_key:
-            logger.error("Missing WEBRISK_API_KEY environment variable")
+            logger.error("Critical: Missing WEBRISK_API_KEY environment variable")
             error_message = 'Server configuration error: API key missing'
-            # Keep http_status_code as 500
-            raise Exception(error_message) # Raise exception to be caught below
+            raise Exception(error_message)
 
-        threat_types = ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"]
+        threat_types_to_check = ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"]
 
-        # Prepare for Web Risk API v1 uris.search
-        search_params = {
-            # No key here for display URL
-            'uri': formatted_url,
-            'threatTypes': threat_types
+        # Prepare URL for display (key omitted)
+        display_params = {
+            'uri': formatted_url_for_webrisk,
+            'threatTypes': threat_types_to_check
         }
-        # Encode params safely for display URL, use quote_plus for URI
-        display_query_string = urlencode({k:v for k,v in search_params.items() if k != 'uri'}, doseq=True)
-        display_query_string += f"&uri={quote_plus(formatted_url)}" # Safely encode the URI itself
+        display_query_string = urlencode({k:v for k,v in display_params.items() if k != 'uri'}, doseq=True)
+        display_query_string += f"&uri={quote_plus(formatted_url_for_webrisk)}"
         web_risk_request_url_display = f"https://webrisk.googleapis.com/v1/uris:search?{display_query_string}"
 
-        # Add API key only for the actual request query string
-        search_params_with_key = search_params.copy()
-        search_params_with_key['key'] = api_key
-        actual_query_string = urlencode(search_params_with_key, doseq=True)
-        search_url = f"https://webrisk.googleapis.com/v1/uris:search?{actual_query_string}"
+        # Prepare actual request parameters with API key
+        actual_params_with_key = display_params.copy()
+        actual_params_with_key['key'] = api_key
+        actual_query_string_for_request = urlencode(actual_params_with_key, doseq=True)
+        actual_search_url = f"https://webrisk.googleapis.com/v1/uris:search?{actual_query_string_for_request}"
 
+        logger.debug(f"Calling Google Web Risk API: GET {actual_search_url}") # Actual URL with key logged server-side only
 
-        logger.debug(f"Calling Web Risk API v1: GET {search_url}") # Log the actual URL with key (server-side only)
+        response_from_google = requests.get(actual_search_url)
+        web_risk_status_code = response_from_google.status_code
 
-        response = requests.get(search_url)
-        web_risk_status_code = response.status_code # Capture status code
+        logger.debug(f"Google Web Risk API Response Status: {web_risk_status_code}")
+        logger.debug(f"Google Web Risk API Response Body: {response_from_google.text}")
 
-        logger.debug(f"Web Risk API Response Status: {web_risk_status_code}")
-        logger.debug(f"Web Risk API Response Body: {response.text}")
+        response_from_google.raise_for_status() # Raises HTTPError for 4xx/5xx responses
 
-        response.raise_for_status() # Raise exception for 4xx/5xx errors
+        web_risk_response_body = response_from_google.json() if response_from_google.text else {}
 
-        web_risk_response_body = response.json() if response.text else {} # Capture response body
-
-        # Process the response and prepare 'scores' for frontend
         scores = []
-        found_threat = web_risk_response_body.get('threat')
-        if found_threat:
-            found_threat_types = found_threat.get('threatTypes', [])
-            logger.info(f"Threat found for {formatted_url}: {found_threat_types}")
-            for t_type in threat_types:
+        found_threat_object = web_risk_response_body.get('threat')
+
+        if found_threat_object:
+            threats_identified_by_google = found_threat_object.get('threatTypes', [])
+            logger.info(f"Threat found for {formatted_url_for_webrisk}: {threats_identified_by_google}")
+            for t_type in threat_types_to_check:
                 scores.append({
                     "threatType": t_type,
-                    "confidenceLevel": "HIGH" if t_type in found_threat_types else "SAFE"
+                    "confidenceLevel": "HIGH" if t_type in threats_identified_by_google else "SAFE"
                 })
         else:
-            logger.info(f"No threat found for {formatted_url}")
-            for t_type in threat_types:
+            logger.info(f"No threat found for {formatted_url_for_webrisk}")
+            for t_type in threat_types_to_check:
                 scores.append({"threatType": t_type, "confidenceLevel": "SAFE"})
-
-        # Construct the final successful response for the frontend
-        frontend_response = {
+        
+        final_response_to_frontend = {
             "scores": scores,
-            "apiRequestDetails": { # New section for debug info
-                "backendRequest": { # Details of request *to* backend
-                     "method": request.method,
-                     "path": request.path,
-                     "body": data # The JSON body received
-                },
-                "googleWebRiskCall": { # Details of call *from* backend to Google
-                    "requestUrl": web_risk_request_url_display, # URL *without* API key
+            "apiRequestDetails": {
+                "backendRequest": {"method": request.method, "path": request.path, "body": data},
+                "googleWebRiskCall": {
+                    "requestUrl": web_risk_request_url_display, # Key is omitted
                     "responseStatusCode": web_risk_status_code,
                     "responseBody": web_risk_response_body
                 }
             }
         }
-        logger.debug(f"Sending successful response to frontend: {frontend_response}")
-        http_status_code = 200
-        return jsonify(frontend_response), http_status_code
+        logger.debug(f"Sending successful response to frontend: {final_response_to_frontend}")
+        http_status_to_return_to_frontend = 200
+        return jsonify(final_response_to_frontend), http_status_to_return_to_frontend
 
     except requests.exceptions.HTTPError as http_err:
-        error_details = response.text if 'response' in locals() else "No response body"
-        error_message = f"Web Risk API request failed: {str(http_err)}"
-        logger.error(f"HTTP error calling Web Risk API: {str(http_err)} - Details: {error_details}")
-        http_status_code = 502 # Bad Gateway seems appropriate
-    except requests.exceptions.RequestException as e:
+        error_details_for_frontend = response_from_google.text if 'response_from_google' in locals() and response_from_google.text else "No details from Google API."
+        error_message = f"Web Risk API request failed with status {web_risk_status_code if web_risk_status_code else 'unknown'}"
+        logger.error(f"HTTP error calling Web Risk API: {str(http_err)} - Details: {error_details_for_frontend}")
+        http_status_to_return_to_frontend = 502 # Bad Gateway
+    except requests.exceptions.RequestException as e: # Covers network errors, timeouts etc.
         error_message = f"Could not connect to Web Risk API: {str(e)}"
         logger.error(f"Network error calling Web Risk API: {str(e)}")
-        http_status_code = 504 # Gateway Timeout
-    except Exception as e:
-        error_message = f"Internal server error"
-        logger.error(f"Unexpected error in scan_url: {str(e)}", exc_info=True) # Log full traceback
-        http_status_code = 500
+        http_status_to_return_to_frontend = 504 # Gateway Timeout
+    except Exception as e: # Catch-all for other unexpected errors
+        error_message = "Internal server error during scan"
+        logger.error(f"Unexpected error in scan_url: {str(e)}", exc_info=True)
+        http_status_to_return_to_frontend = 500
 
-    # Construct error response for the frontend
-    # Include whatever details were captured before the error
-    frontend_error_response = {
+    # Construct and send an error response
+    error_response_to_frontend = {
         "error": error_message,
-        "details": error_details,
+        "details": error_details_for_frontend, # This might be None or contain Google's error text
         "apiRequestDetails": {
-             "backendRequest": {
-                 "method": request.method,
-                 "path": request.path,
-                 "body": data
-             },
+             "backendRequest": {"method": request.method, "path": request.path, "body": data},
              "googleWebRiskCall": {
                  "requestUrl": web_risk_request_url_display,
-                 "responseStatusCode": web_risk_status_code,
-                 "responseBody": web_risk_response_body # Might be None if error happened before response
+                 "responseStatusCode": web_risk_status_code, # Might be None if request didn't happen
+                 "responseBody": web_risk_response_body # Might be None
              }
          }
     }
-    logger.debug(f"Sending error response to frontend: {frontend_error_response}")
-    return jsonify(frontend_error_response), http_status_code
+    logger.debug(f"Sending error response to frontend: {error_response_to_frontend}")
+    return jsonify(error_response_to_frontend), http_status_to_return_to_frontend
+
+# --- Add your /api/submit and /api/submission/<operation> routes here ---
+# Ensure they also have proper logging and error handling, and use environment variables
+# for PROJECT_NUMBER. They will also benefit from the global CORS(app) setting.
+
+@app.route('/api/submit', methods=['POST'])
+def submit_url():
+    logger.debug("Received submission request")
+    # ... (Your existing submit_url logic, adapted for GOOGLE_CLOUD_PROJECT_NUMBER env var)
+    # Make sure to return jsonify({...}), status_code
+    return jsonify({"message": "Submit endpoint placeholder"}), 200
 
 
-# --- Keep other routes (/api/submit, /api/submission) and main run block ---
-# if __name__ == '__main__':
-#     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+@app.route('/api/submission/<operation>', methods=['GET'])
+def check_submission_status(operation):
+    logger.debug(f"Received check submission status request for operation: {operation}")
+    # ... (Your existing check_submission_status logic, adapted for GOOGLE_CLOUD_PROJECT_NUMBER env var)
+    # Make sure to return jsonify({...}), status_code
+    return jsonify({"message": f"Check status placeholder for {operation}"}), 200
+
+if __name__ == '__main__':
+    # This is used for local development, App Engine uses the Gunicorn entrypoint
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
