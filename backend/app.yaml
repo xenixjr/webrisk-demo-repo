@@ -1,21 +1,9 @@
-runtime: python39 # Or your chosen Python version (e.g., python311, python312)
+runtime: python39 # Or your chosen Python version
 service: backend
 entrypoint: gunicorn -b :$PORT main:app
-
-# Instance class can be adjusted based on expected load, F1 is the smallest
-# instance_class: F1
-
-# Automatic scaling settings (example, adjust as needed)
-# automatic_scaling:
-#   min_instances: 0
-#   max_instances: 1
-#   target_cpu_utilization: 0.65
 
 env_variables:
   # IMPORTANT: Replace placeholders below with actual values locally before deploying,
   # OR configure and use Secret Manager (preferred). Do not commit secrets!
   WEBRISK_API_KEY: 'YOUR_WEBRISK_API_KEY_PLACEHOLDER'
   GOOGLE_CLOUD_PROJECT_NUMBER: 'YOUR_PROJECT_NUMBER_PLACEHOLDER'
-  # You'll need to get your frontend URL after deploying it the first time, or predict it.
-  # Example: 'https://your-project-id.uc.r.appspot.com' (No trailing slash)
-  FRONTEND_ORIGIN_URL: 'YOUR_ACTUAL_DEPLOYED_FRONTEND_URL_PLACEHOLDER'

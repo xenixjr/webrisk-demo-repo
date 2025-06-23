@@ -1,21 +1,15 @@
 runtime: nodejs18
 service: default
-
 handlers:
-  # Example: If you had any API endpoints directly served by your Node.js app itself
-  # (though your /api/scan now goes to the Python backend)
-  # - url: /api/some-frontend-specific-api/.*
+  # Optional: If your Node.js app has its own API handlers needed by the frontend itself
+  # - url: /api/some-frontend-api/.*
   #   script: auto
   #   secure: always
-
-  # Serve static assets from the build folder (CSS, JS, images, etc.)
-  - url: /(.*\..+)$
+  - url: /(.*\..+)$ # Static assets (CSS, JS, images)
     static_files: build/\1
     upload: build/(.*\..+)$
     secure: always
-
-  # Serve index.html for all other routes (SPA fallback)
-  - url: /.*
+  - url: /.* # Catch-all for SPA routing
     static_files: build/index.html
     upload: build/index.html
     secure: always
