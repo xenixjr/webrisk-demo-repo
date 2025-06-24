@@ -1,0 +1,10 @@
+dispatch:
+  # Rule 1: Route all API traffic to the 'backend' service.
+  # The asterisk (*) is a wildcard for your domain.
+  - url: "*/api/*"
+    service: backend
+
+  # Rule 2: Route all other traffic to the 'default' service (your frontend).
+  # This is the catch-all rule and must come last.
+  - url: "*/.*"
+    service: default

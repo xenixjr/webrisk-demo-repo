@@ -5,5 +5,11 @@ entrypoint: gunicorn -b :$PORT main:app
 env_variables:
   # IMPORTANT: Replace placeholders below with actual values locally before deploying,
   # OR configure and use Secret Manager (preferred). Do not commit secrets!
-  WEBRISK_API_KEY: 'YOUR_WEBRISK_API_KEY_PLACEHOLDER'
-  GOOGLE_CLOUD_PROJECT_NUMBER: 'YOUR_PROJECT_NUMBER_PLACEHOLDER'
+  WEBRISK_API_KEY: TBD
+  GOOGLE_CLOUD_PROJECT_NUMBER: TBD
+
+health_check:
+  enable_health_check: True
+
+inbound_services:
+  - warmup

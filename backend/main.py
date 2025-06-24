@@ -11,10 +11,24 @@ import requests  # This is used in the scan_url function
 
 
 app = Flask(__name__)
-CORS(app, origins="YOUR_FRONTEND_URL") # e.g., https://tamw-webrisk-demo.uc.r.appspot.com
+CORS(app, origins="https://tamw-webrisk-demo.uc.r.appspot.com")
 # Configure logging to help us debug issues
 logging.basicConfig(level=logging.DEBUG)
 logger = app.logger
+
+# --- Health Check Endpoint ---
+@app.route('/_ah/health')
+def health_check():
+    """App Engine standard health check."""
+    return 'ok', 200
+
+# --- Warm Up Handler ---
+@app.route('/_ah/warmup')
+def warmup():
+    """App Engine warmup handler. See https://cloud.google.com/appengine/docs/standard/python3/configuring-warmup-requests."""
+    # This is where you could initialize database connections, load caches, etc.
+    # For now, a simple success response is all that's needed.
+    return '', 200, {}
 
 @app.route('/api/scan', methods=['POST'])
 def scan_url():
@@ -94,6 +108,7 @@ def scan_url():
         logger.error(f"Unexpected error in scan_url: {str(e)}", exc_info=True) # Log full traceback for other errors
         return jsonify({'error': f"Internal server error"}), 500
 
+
 @app.route('/api/submit', methods=['POST'])
 def submit_url():
     logger.debug("Received submission request")
@@ -171,7 +186,7 @@ def submit_url():
         logger.error(f"Unexpected error during submission: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/submission/<operation>', methods=['GET'])
+@app.route('/api/submission/<path:operation>', methods=['GET'])
 def check_submission_status(operation):
     """
     Checks the status of a URL submission using the full operation path.

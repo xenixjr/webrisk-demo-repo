@@ -305,7 +305,7 @@ const WebRiskDemo = () => {
           <div className="p-6">
             <div className="flex items-center gap-2 mb-6">
               <Shield className="h-6 w-6 text-blue-600" />
-              <h1 className="text-2xl font-bold">Google Cloud Web Risk Demo</h1>
+              <h1 className="text-2xl font-bold">Google Cloud Security - Web Risk Demo</h1>
             </div>
 
             <div className="flex gap-4 mb-8">

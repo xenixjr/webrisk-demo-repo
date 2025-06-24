@@ -6,7 +6,7 @@ const SubmissionGuidelines = () => (
   <div className="bg-blue-50 p-4 rounded-lg mb-6">
     <h3 className="flex items-center gap-2 font-medium text-blue-800 mb-2">
       <Shield className="h-5 w-5" />
-      Submission Guidelines
+      Google Cloud Security - Web Risk Submission API : Submission Guidelines
     </h3>
     <div className="text-sm text-blue-700 space-y-2">
       <p>Only submit URLs that clearly violate Safe Browsing policies:</p>

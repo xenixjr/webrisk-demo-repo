@@ -1,4 +1,4 @@
-runtime: nodejs18
+runtime: nodejs22
 service: default
 handlers:
   # Optional: If your Node.js app has its own API handlers needed by the frontend itself
